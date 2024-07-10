@@ -4,22 +4,24 @@ use std::fs::OpenOptions;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+const sub_grid_size: usize = 3;
+const grid_size: usize = sub_grid_size * sub_grid_size;
+
+type Grid = [Cell; grid_size * grid_size];
+
+#[derive(Debug, Clone)]
+struct StackState {
+    grid: Grid,
+    undecided: HashSet<(usize, usize)>,
+    to_change: Vec<(usize, usize)>,
+    step: usize,
+}
+
 #[derive(Debug, Clone)]
 enum Cell {
     Static(u8),
     Avail(HashSet<u8>)
 }
-
-impl std::default::Default for Cell {
-    fn default() -> Self {
-        Cell::Avail(HashSet::new())
-    }
-}
-
-const sub_grid_size: usize = 3;
-const grid_size: usize = sub_grid_size * sub_grid_size;
-
-type Grid = [Cell; grid_size * grid_size];
 
 #[inline]
 fn pos(row: usize, col: usize) -> usize {
@@ -86,7 +88,7 @@ fn print_grid_with_avail(grid: &Grid) {
                 print!("{index}");
             }
 
-            print!("  | ");
+            print!(" |");
 
             for _ in 0..avail_rows {
                 let Some(msg) = avail_iter.next() else {
@@ -112,7 +114,7 @@ fn print_grid_with_avail(grid: &Grid) {
                 print!("{v}");
             }
 
-            print!("-| ");
+            print!("|");
 
             for _ in 0..avail_rows {
                 let Some(msg) = avail_iter.next() else {
@@ -140,7 +142,7 @@ fn print_grid_with_avail(grid: &Grid) {
             }
         }
 
-        print!("  | ");
+        print!(" |");
 
         for _ in 0..avail_rows {
             let Some(msg) = avail_iter.next() else {
@@ -166,7 +168,7 @@ fn print_grid_with_avail(grid: &Grid) {
             print!("{v}");
         }
 
-        print!("-| ");
+        print!("|");
 
         for _ in 0..avail_rows {
             let Some(msg) = avail_iter.next() else {
@@ -184,7 +186,7 @@ fn print_grid_with_avail(grid: &Grid) {
     while let Some(msg) = avail_iter.next() {
         if count == 0 {
             let spacer = " ".repeat(26);
-            print!("{spacer} | ");
+            print!("{spacer}|");
         }
 
         print!(" {msg:<longest_avail$} |");
@@ -202,8 +204,33 @@ fn print_grid_with_avail(grid: &Grid) {
 }
 
 fn main() {
-    let input_file = PathBuf::from("./input.txt");
-    let mut grid: [Cell; grid_size * grid_size] = std::array::from_fn(|_| Cell::default());
+    let mut undecided = HashSet::new();
+    let mut to_change = Vec::new();
+    let mut grid: [Cell; grid_size * grid_size] = std::array::from_fn(|index| {
+        let row = index / grid_size;
+        let col = index % grid_size;
+
+        undecided.insert((row, col));
+
+        Cell::Avail(HashSet::from([1,2,3,4,5,6,7,8,9]))
+    });
+
+    let mut args = std::env::args();
+    let mut maybe_input_file = None;
+
+    loop {
+        let Some(arg) = args.next() else {
+            break;
+        };
+
+        maybe_input_file = Some(PathBuf::from(arg));
+    }
+
+    let Some(input_file) = maybe_input_file else {
+        println!("no input file provided");
+        return;
+    };
+
     let file = OpenOptions::new()
         .read(true)
         .open(&input_file)
@@ -245,6 +272,10 @@ fn main() {
             panic!("invalid col value. cannot parse to usize. {}:{line_num} \"{line}\"", input_file.display());
         };
 
+        if value == 0 || value > 9 {
+            panic!("invalid cell value. value is 0 or greater than 9. {}:{line_num} \"{line}\"", input_file.display());
+        }
+
         if row == 0 {
             panic!("invalid row value. row value is 0. {}:{line_num} \"{line}\"", input_file.display());
         }
@@ -261,173 +292,92 @@ fn main() {
 
         println!("{row}:{col} = {value} sub grid: {sub_row}:{sub_col} index: {index}");
 
-        grid[pos(row, col)] = Cell::Static(value);
+        grid[pos(row, col)] = Cell::Avail(HashSet::from([value]));
+        to_change.push((row, col));
     }
 
-    let mut non_static = HashSet::new();
+    let mut stack = Vec::new();
+    stack.push(StackState {
+        grid,
+        undecided,
+        to_change,
+        step: 0
+    });
 
-    // initialize
+    let mut sudokus = Vec::new();
 
-    for row in 0..grid_size {
-        for col in 0..grid_size {
-            match &mut grid[pos(row, col)] {
+    while let Some(state) = stack.pop() {
+        let Some(state) = process_state(state) else {
+            continue;
+        };
+
+        if state.undecided.is_empty() {
+            sudokus.push(state.grid);
+
+            continue;
+        }
+
+        let mut smallest = usize::MAX;
+        let mut smallest_coord = (0, 0);
+
+        for (row, col) in &state.undecided {
+            match &state.grid[pos(*row, *col)] {
                 Cell::Static(_) => {}
-                Cell::Avail(avail) => {
-                    non_static.insert((row, col));
+                Cell::Avail(avail) => if avail.len() < smallest {
+                    smallest = avail.len();
+                    smallest_coord = (*row, *col);
+                }
+            }
+        }
 
-                    for v in 1..=9 {
-                        avail.insert(v);
-                    }
+        {
+            let msg = format!("choosing cells ");
+            println!("{msg:%<width$}", width = 80);
+        }
+
+        let (row, col) = smallest_coord;
+        let index = pos(row, col);
+
+        match &state.grid[index] {
+            Cell::Static(_) => {
+                println!("static cell?");
+            }
+            Cell::Avail(avail) => {
+                for value in avail {
+                    println!("choosing {row}:{col} -> {value}");
+
+                    let mut cloned = state.clone();
+                    cloned.grid[index] = Cell::Avail(HashSet::from([*value]));
+                    cloned.to_change.push((row, col));
+
+                    stack.push(cloned);
                 }
             }
         }
     }
 
-    let mut to_change = Vec::new();
-    // check state
+    if !sudokus.is_empty() {
+        let mut first = true;
+        let full = "#".repeat(80);
+        let msg = format!(" !!SUDOKU!! ");
+        println!("{full}\n{msg:#^width$}\n{full}", width = 80);
 
-    for row in 0..grid_size {
-        for col in 0..grid_size {
-            let (sub_row, sub_col) = sub_grid_coord(row, col);
-            let index = pos(row,col);
-
-            let checking = match grid[index] {
-                Cell::Static(value) => value,
-                Cell::Avail(_) => continue,
-            };
-
-            println!("checking {row}:{col} {checking} sub grid: {sub_row}:{sub_col} index: {index}");
-            println!("checking row");
-
-            // check entire row
-            for check_row in 0..grid_size {
-                let check_index = pos(check_row, col);
-
-                if index == check_index {
-                    continue;
-                }
-
-                print!("{check_row}:{col} index: {check_index}");
-
-                match &mut grid[pos(check_row, col)] {
-                    Cell::Static(value) => if *value == checking {
-                        println!(" duplicate value found");
-                        print_grid_with_avail(&grid);
-
-                        panic!("halt");
-                    } else {
-                        println!("");
-                    }
-                    Cell::Avail(avail) => if avail.remove(&checking) {
-                        let len = avail.len();
-
-                        if len == 0 {
-                            println!(" no more available options");
-                            print_grid_with_avail(&grid);
-
-                            panic!("halt");
-                        } else if len == 1 {
-                            println!(" only one option left");
-
-                            to_change.push((check_row, col));
-                        } else {
-                            println!("");
-                        }
-                    } else {
-                        println!("");
-                    }
-                }
+        for grid in sudokus {
+            if first {
+                first = false;
+            } else {
+                println!("{full}");
             }
 
-            println!("checking col");
-
-            // check entire col
-            for check_col in 0..grid_size {
-                let check_index = pos(row, check_col);
-
-                if check_index == index {
-                    continue;
-                }
-
-                print!("{row}:{check_col} index: {check_index}");
-
-                match &mut grid[check_index] {
-                    Cell::Static(value) => if *value == checking {
-                        println!(" duplicate value found");
-                        print_grid_with_avail(&grid);
-
-                        panic!("halt");
-                    } else {
-                        println!("");
-                    }
-                    Cell::Avail(avail) => if avail.remove(&checking) {
-                        let len = avail.len();
-
-                        if len == 0 {
-                            println!(" no more available options");
-                            print_grid_with_avail(&grid);
-
-                            panic!("halt");
-                        } else if len == 1 {
-                            println!(" only one option left");
-
-                            to_change.push((row, check_col));
-                        } else {
-                            println!("");
-                        }
-                    } else {
-                        println!("");
-                    }
-                }
-            }
-
-            println!("checking sub grid");
-
-            // check sub grid
-            for check_sub_row in 0..sub_grid_size {
-                for check_sub_col in 0..sub_grid_size {
-                    let sub_index = sub_pos(sub_row, sub_col, check_sub_row, check_sub_col);
-
-                    if sub_index == index {
-                        continue;
-                    }
-
-                    print!("{check_sub_row}:{check_sub_col} {sub_index}");
-
-                    match &mut grid[sub_index] {
-                        Cell::Static(value) => if *value == checking {
-                            println!(" duplicate value found in sub grid");
-                            print_grid_with_avail(&grid);
-
-                            panic!("halt");
-                        } else {
-                            println!("");
-                        }
-                        Cell::Avail(avail) => if avail.remove(&checking) {
-                            let len = avail.len();
-
-                            if len == 0 {
-                                println!(" no more available options");
-                                print_grid_with_avail(&grid);
-
-                                panic!("halt");
-                            } else if len == 1 {
-                                println!(" only one option left");
-
-                                to_change.push(grid_cord(sub_row, sub_col, check_sub_row, check_sub_col));
-                            } else {
-                                println!("");
-                            }
-                        } else {
-                            println!("");
-                        }
-                    }
-                }
-            }
+            print_grid_with_avail(&grid);
         }
+    } else {
+        println!("no solutions found");
     }
+}
 
-    let mut step = 0;
+fn process_state(state: StackState) -> Option<StackState> {
+    let StackState {mut grid, mut undecided, mut to_change, mut step} = state;
 
     loop {
         step += 1;
@@ -449,18 +399,18 @@ fn main() {
             let index = pos(row, col);
             let (sub_row, sub_col) = sub_grid_coord(row, col);
 
-            let value = match &grid[index] {
+            let checking = match &grid[index] {
                 Cell::Static(_) => {
                     println!("attempting to update static cell {row}:{col}");
                     print_grid_with_avail(&grid);
 
-                    panic!("halt");
+                    return None;
                 }
                 Cell::Avail(avail) => if avail.len() != 1 {
                     println!("mis-calculation for grid {row}:{col}");
                     print_grid_with_avail(&grid);
 
-                    panic!("halt");
+                    return None;
                 } else {
                     *avail.iter()
                         .next()
@@ -468,10 +418,10 @@ fn main() {
                 }
             };
 
-            println!("changing {row}:{col} -> {value}");
+            println!("changing {row}:{col} -> {checking}");
 
-            grid[index] = Cell::Static(value);
-            non_static.remove(&(row, col));
+            grid[index] = Cell::Static(checking);
+            undecided.remove(&(row, col));
 
             // update row
             for update_row in 0..grid_size {
@@ -482,8 +432,13 @@ fn main() {
                 }
 
                 match &mut grid[update_index] {
-                    Cell::Static(_) => {}
-                    Cell::Avail(avail) => if avail.remove(&value) {
+                    Cell::Static(value) => if *value == checking {
+                        println!(" duplicate value found in row");
+                        print_grid_with_avail(&grid);
+
+                        panic!("halt");
+                    }
+                    Cell::Avail(avail) => if avail.remove(&checking) {
                         let len = avail.len();
 
                         print!("updating {update_row}:{col}");
@@ -492,7 +447,7 @@ fn main() {
                             println!(" no more available options");
                             print_grid_with_avail(&grid);
 
-                            panic!("halt");
+                            return None;
                         } else if len == 1 {
                             println!(" only one option left");
 
@@ -513,8 +468,13 @@ fn main() {
                 }
 
                 match &mut grid[update_index] {
-                    Cell::Static(_) => {}
-                    Cell::Avail(avail) => if avail.remove(&value) {
+                    Cell::Static(value) => if *value == checking {
+                        println!(" duplicate value found in col");
+                        print_grid_with_avail(&grid);
+
+                        return None;
+                    }
+                    Cell::Avail(avail) => if avail.remove(&checking) {
                         let len = avail.len();
 
                         print!("updating {row}:{update_col}");
@@ -523,7 +483,7 @@ fn main() {
                             println!(" no more available options");
                             print_grid_with_avail(&grid);
 
-                            panic!("halt");
+                            return None;
                         } else if len == 1 {
                             println!(" only one option left");
 
@@ -545,8 +505,13 @@ fn main() {
                     }
 
                     match &mut grid[update_index] {
-                        Cell::Static(_) => {}
-                        Cell::Avail(avail) => if avail.remove(&value) {
+                        Cell::Static(value) => if *value == checking {
+                            println!(" duplicate value found in sub grid");
+                            print_grid_with_avail(&grid);
+
+                            return None;
+                        }
+                        Cell::Avail(avail) => if avail.remove(&checking) {
                             let len = avail.len();
 
                             print!("updating sub grid {sub_row}:{sub_col} {update_sub_row}:{update_sub_col}");
@@ -555,7 +520,7 @@ fn main() {
                                 println!(" no more available options");
                                 print_grid_with_avail(&grid);
 
-                                panic!("halt");
+                                return None;
                             } else if len == 1 {
                                 println!(" only one option left");
 
@@ -574,7 +539,7 @@ fn main() {
 
             let mut grids_checked = [false; sub_grid_size * sub_grid_size];
 
-            for (row, col) in &non_static {
+            for (row, col) in &undecided {
                 let (sub_row, sub_col) = sub_grid_coord(*row, *col);
                 let grids_checked_index = sub_row * sub_grid_size + sub_col;
 
@@ -622,4 +587,8 @@ fn main() {
 
         to_change = next;
     }
+
+    Some(StackState {
+        grid, undecided, to_change, step
+    })
 }
