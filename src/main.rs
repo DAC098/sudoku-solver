@@ -4,10 +4,10 @@ use std::fs::OpenOptions;
 use std::io::BufRead;
 use std::path::PathBuf;
 
-const sub_grid_size: usize = 3;
-const grid_size: usize = sub_grid_size * sub_grid_size;
+const SUB_GRID_SIZE: usize = 3;
+const GRID_SIZE: usize = SUB_GRID_SIZE * SUB_GRID_SIZE;
 
-type Grid = [Cell; grid_size * grid_size];
+type Grid = [Cell; GRID_SIZE * GRID_SIZE];
 
 #[derive(Debug, Clone)]
 struct StackState {
@@ -25,38 +25,38 @@ enum Cell {
 
 #[inline]
 fn pos(row: usize, col: usize) -> usize {
-    row * grid_size + col
+    row * GRID_SIZE + col
 }
 
 #[inline]
 fn sub_pos(sub_row: usize, sub_col: usize, row: usize, col: usize) -> usize {
-    (row + sub_row * sub_grid_size) * grid_size + col + (sub_col * sub_grid_size)
+    (row + sub_row * SUB_GRID_SIZE) * GRID_SIZE + col + (sub_col * SUB_GRID_SIZE)
 }
 
 #[inline]
 fn grid_cord(sub_row: usize, sub_col: usize, row: usize, col: usize) -> (usize, usize) {
-    ((row + sub_row * sub_grid_size), (col + sub_col * sub_grid_size))
+    ((row + sub_row * SUB_GRID_SIZE), (col + sub_col * SUB_GRID_SIZE))
 }
 
 #[inline]
 fn sub_grid_coord(row: usize, col: usize) -> (usize, usize) {
-    ((row / sub_grid_size), (col / sub_grid_size))
+    ((row / SUB_GRID_SIZE), (col / SUB_GRID_SIZE))
 }
 
 fn print_grid_with_avail(grid: &Grid) {
     let mut avail_list = Vec::new();
     let mut longest_avail = 0;
 
-    for row in 0..grid_size {
-        for col in 0..grid_size {
+    for row in 0..GRID_SIZE {
+        for col in 0..GRID_SIZE {
             match &grid[pos(row, col)] {
                 Cell::Static(_) => {}
                 Cell::Avail(avail) => {
                     let mut list = String::new();
-                    write!(&mut list, "{row}:{col} =");
+                    write!(&mut list, "{row}:{col} =").unwrap();
 
                     for value in avail {
-                        write!(&mut list, " {value}");
+                        write!(&mut list, " {value}").unwrap();
                     }
 
                     let count = list.chars().count();
@@ -74,14 +74,14 @@ fn print_grid_with_avail(grid: &Grid) {
     let mut avail_iter = avail_list.into_iter();
     let avail_rows = 2;
 
-    for row in 0..grid_size {
+    for row in 0..GRID_SIZE {
         if row == 0 {
             print!("  |");
 
-            for index in 0..grid_size {
+            for index in 0..GRID_SIZE {
                 print!(" ");
 
-                if index != 0 && index % sub_grid_size == 0 {
+                if index != 0 && index % SUB_GRID_SIZE == 0 {
                     print!("| ");
                 }
 
@@ -98,13 +98,13 @@ fn print_grid_with_avail(grid: &Grid) {
                 print!(" {msg:<longest_avail$} |");
             }
 
-            println!("");
+            println!();
         }
 
-        if row % sub_grid_size == 0 {
+        if row % SUB_GRID_SIZE == 0 {
             print!("--+-");
 
-            let v = "-".repeat(sub_grid_size * 2);
+            let v = "-".repeat(SUB_GRID_SIZE * 2);
 
             for c in 0..3 {
                 if c != 0 {
@@ -124,15 +124,15 @@ fn print_grid_with_avail(grid: &Grid) {
                 print!(" {msg:<longest_avail$} |");
             }
 
-            println!("");
+            println!();
         }
 
         print!("{row} |");
 
-        for col in 0..grid_size {
+        for col in 0..GRID_SIZE {
             print!(" ");
 
-            if col != 0 && col % sub_grid_size == 0 {
+            if col != 0 && col % SUB_GRID_SIZE == 0 {
                 print!("| ");
             }
 
@@ -152,13 +152,13 @@ fn print_grid_with_avail(grid: &Grid) {
             print!(" {msg:<longest_avail$} |");
         }
 
-        println!("");
+        println!();
     }
 
     {
         print!("--+-");
 
-        let v = "-".repeat(sub_grid_size * 2);
+        let v = "-".repeat(SUB_GRID_SIZE * 2);
 
         for c in 0..3 {
             if c != 0 {
@@ -178,12 +178,12 @@ fn print_grid_with_avail(grid: &Grid) {
             print!(" {msg:<longest_avail$} |");
         }
 
-        println!("");
+        println!();
     }
 
     let mut count = 0;
 
-    while let Some(msg) = avail_iter.next() {
+    for msg in avail_iter {
         if count == 0 {
             let spacer = " ".repeat(26);
             print!("{spacer}|");
@@ -194,21 +194,21 @@ fn print_grid_with_avail(grid: &Grid) {
         count = (count + 1) % avail_rows;
 
         if count == 0 {
-            println!("");
+            println!();
         }
     }
 
     if count != 0 {
-        println!("");
+        println!();
     }
 }
 
 fn main() {
     let mut undecided = HashSet::new();
     let mut to_change = Vec::new();
-    let mut grid: [Cell; grid_size * grid_size] = std::array::from_fn(|index| {
-        let row = index / grid_size;
-        let col = index % grid_size;
+    let mut grid: [Cell; GRID_SIZE * GRID_SIZE] = std::array::from_fn(|index| {
+        let row = index / GRID_SIZE;
+        let col = index % GRID_SIZE;
 
         undecided.insert((row, col));
 
@@ -254,11 +254,11 @@ fn main() {
             break;
         }
 
-        let Some((value, coord)) = line.trim().split_once(" ") else {
+        let Some((value, coord)) = line.trim().split_once(' ') else {
             panic!("invalid line input. no space between value and grid position. {}:{line_num} \"{line}\"", input_file.display());
         };
 
-        let Some((row, col)) = coord.split_once(",") else {
+        let Some((row, col)) = coord.split_once(',') else {
             panic!("invalid line input. no comma for grid position. {}:{line_num} \"{line}\"", input_file.display());
         };
 
@@ -306,6 +306,8 @@ fn main() {
 
     let mut sudokus = Vec::new();
 
+    let start = std::time::Instant::now();
+
     while let Some(state) = stack.pop() {
         let Some(state) = process_state(state) else {
             continue;
@@ -331,7 +333,7 @@ fn main() {
         }
 
         {
-            let msg = format!("choosing cells ");
+            let msg = "choosing cells ".to_owned();
             println!("{msg:%<width$}", width = 80);
         }
 
@@ -356,10 +358,12 @@ fn main() {
         }
     }
 
+    let duration = start.elapsed();
+
     if !sudokus.is_empty() {
         let mut first = true;
         let full = "#".repeat(80);
-        let msg = format!(" !!SUDOKU!! ");
+        let msg = " !!SUDOKU!! ".to_owned();
         println!("{full}\n{msg:#^width$}\n{full}", width = 80);
 
         for grid in sudokus {
@@ -374,6 +378,8 @@ fn main() {
     } else {
         println!("no solutions found");
     }
+
+    println!("time: {duration:#?}");
 }
 
 fn process_state(state: StackState) -> Option<StackState> {
@@ -424,7 +430,7 @@ fn process_state(state: StackState) -> Option<StackState> {
             undecided.remove(&(row, col));
 
             // update row
-            for update_row in 0..grid_size {
+            for update_row in 0..GRID_SIZE {
                 let update_index = pos(update_row, col);
 
                 if update_index == index {
@@ -453,14 +459,14 @@ fn process_state(state: StackState) -> Option<StackState> {
 
                             next.push((update_row, col));
                         } else {
-                            println!("");
+                            println!();
                         }
                     }
                 }
             }
 
             // update col
-            for update_col in 0..grid_size {
+            for update_col in 0..GRID_SIZE {
                 let update_index = pos(row, update_col);
 
                 if update_index == index {
@@ -489,15 +495,15 @@ fn process_state(state: StackState) -> Option<StackState> {
 
                             next.push((row, update_col));
                         } else {
-                            println!("");
+                            println!();
                         }
                     }
                 }
             }
 
             // update sub grid
-            for update_sub_row in 0..sub_grid_size {
-                for update_sub_col in 0..sub_grid_size {
+            for update_sub_row in 0..SUB_GRID_SIZE {
+                for update_sub_col in 0..SUB_GRID_SIZE {
                     let update_index = sub_pos(sub_row, sub_col, update_sub_row, update_sub_col);
 
                     if update_index == index {
@@ -526,7 +532,7 @@ fn process_state(state: StackState) -> Option<StackState> {
 
                                 next.push(grid_cord(sub_row, sub_col, update_sub_row, update_sub_col));
                             } else {
-                                println!("");
+                                println!();
                             }
                         }
                     }
@@ -537,11 +543,11 @@ fn process_state(state: StackState) -> Option<StackState> {
         if next.is_empty() {
             println!("checking subgrids");
 
-            let mut grids_checked = [false; sub_grid_size * sub_grid_size];
+            let mut grids_checked = [false; SUB_GRID_SIZE * SUB_GRID_SIZE];
 
             for (row, col) in &undecided {
                 let (sub_row, sub_col) = sub_grid_coord(*row, *col);
-                let grids_checked_index = sub_row * sub_grid_size + sub_col;
+                let grids_checked_index = sub_row * SUB_GRID_SIZE + sub_col;
 
                 if grids_checked[grids_checked_index] {
                     continue;
@@ -549,12 +555,10 @@ fn process_state(state: StackState) -> Option<StackState> {
                     grids_checked[grids_checked_index] = true;
                 }
 
-                let index = pos(*row, *col);
-
                 let mut unique: HashMap<u8, Vec<(usize, usize)>> = HashMap::new();
 
-                for check_sub_row in 0..sub_grid_size {
-                    for check_sub_col in 0..sub_grid_size {
+                for check_sub_row in 0..SUB_GRID_SIZE {
+                    for check_sub_col in 0..SUB_GRID_SIZE {
                         let check_index = sub_pos(sub_row, sub_col, check_sub_row, check_sub_col);
                         let check_coord = grid_cord(sub_row, sub_col, check_sub_row, check_sub_col);
 
