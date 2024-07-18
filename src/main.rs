@@ -466,8 +466,10 @@ fn process_state(state: StackState, options: &Options) -> Option<StackState> {
 
                 match &mut grid[update_index] {
                     Cell::Static(value) => if *value == checking {
-                        println!(" duplicate value found in row");
-                        print_grid_with_avail(&grid);
+                        if options.verbose {
+                            println!(" duplicate value found in row");
+                            print_grid_with_avail(&grid);
+                        }
 
                         return None;
                     }
