@@ -203,6 +203,11 @@ fn print_grid_with_avail(grid: &Grid) {
     }
 }
 
+struct Options {
+    verbose: bool,
+    steps: bool,
+}
+
 fn main() {
     let mut undecided = HashSet::new();
     let mut to_change = Vec::new();
@@ -217,13 +222,23 @@ fn main() {
 
     let mut args = std::env::args();
     let mut maybe_input_file = None;
+    let mut options = Options {
+        verbose: false,
+        steps: false,
+    };
 
     loop {
         let Some(arg) = args.next() else {
             break;
         };
 
-        maybe_input_file = Some(PathBuf::from(arg));
+        if arg.eq("-v") || arg.eq("--verbose") {
+            options.verbose = true;
+        } else if arg.eq("--steps") {
+            options.steps = true;
+        } else {
+            maybe_input_file = Some(PathBuf::from(arg));
+        }
     }
 
     let Some(input_file) = maybe_input_file else {
@@ -290,7 +305,9 @@ fn main() {
         let (sub_row, sub_col) = sub_grid_coord(row, col);
         let index = pos(row, col);
 
-        println!("{row}:{col} = {value} sub grid: {sub_row}:{sub_col} index: {index}");
+        if options.verbose {
+            println!("{row}:{col} = {value} sub grid: {sub_row}:{sub_col} index: {index}");
+        }
 
         grid[pos(row, col)] = Cell::Avail(HashSet::from([value]));
         to_change.push((row, col));
@@ -309,7 +326,7 @@ fn main() {
     let start = std::time::Instant::now();
 
     while let Some(state) = stack.pop() {
-        let Some(state) = process_state(state) else {
+        let Some(state) = process_state(state, &options) else {
             continue;
         };
 
@@ -332,7 +349,7 @@ fn main() {
             }
         }
 
-        {
+        if options.verbose {
             let msg = "choosing cells ".to_owned();
             println!("{msg:%<width$}", width = 80);
         }
@@ -342,11 +359,15 @@ fn main() {
 
         match &state.grid[index] {
             Cell::Static(_) => {
-                println!("static cell?");
+                if options.verbose {
+                    println!("static cell?");
+                }
             }
             Cell::Avail(avail) => {
                 for value in avail {
-                    println!("choosing {row}:{col} -> {value}");
+                    if options.verbose {
+                        println!("choosing {row}:{col} -> {value}");
+                    }
 
                     let mut cloned = state.clone();
                     cloned.grid[index] = Cell::Avail(HashSet::from([*value]));
@@ -382,13 +403,13 @@ fn main() {
     println!("time: {duration:#?}");
 }
 
-fn process_state(state: StackState) -> Option<StackState> {
+fn process_state(state: StackState, options: &Options) -> Option<StackState> {
     let StackState {mut grid, mut undecided, mut to_change, mut step} = state;
 
     loop {
         step += 1;
 
-        {
+        if options.verbose || options.steps {
             let msg = format!("step {step} ");
 
             println!("{msg:-<width$}", width = 80);
@@ -407,14 +428,18 @@ fn process_state(state: StackState) -> Option<StackState> {
 
             let checking = match &grid[index] {
                 Cell::Static(_) => {
-                    println!("attempting to update static cell {row}:{col}");
-                    print_grid_with_avail(&grid);
+                    if options.verbose {
+                        println!("attempting to update static cell {row}:{col}");
+                        print_grid_with_avail(&grid);
+                    }
 
                     return None;
                 }
                 Cell::Avail(avail) => if avail.len() != 1 {
-                    println!("mis-calculation for grid {row}:{col}");
-                    print_grid_with_avail(&grid);
+                    if options.verbose {
+                        println!("mis-calculation for grid {row}:{col}");
+                        print_grid_with_avail(&grid);
+                    }
 
                     return None;
                 } else {
@@ -424,7 +449,9 @@ fn process_state(state: StackState) -> Option<StackState> {
                 }
             };
 
-            println!("changing {row}:{col} -> {checking}");
+            if options.verbose {
+                println!("changing {row}:{col} -> {checking}");
+            }
 
             grid[index] = Cell::Static(checking);
             undecided.remove(&(row, col));
@@ -442,24 +469,32 @@ fn process_state(state: StackState) -> Option<StackState> {
                         println!(" duplicate value found in row");
                         print_grid_with_avail(&grid);
 
-                        panic!("halt");
+                        return None;
                     }
                     Cell::Avail(avail) => if avail.remove(&checking) {
                         let len = avail.len();
 
-                        print!("updating {update_row}:{col}");
+                        if options.verbose {
+                            print!("updating {update_row}:{col}");
+                        }
 
                         if len == 0 {
-                            println!(" no more available options");
-                            print_grid_with_avail(&grid);
+                            if options.verbose {
+                                println!(" no more available options");
+                                print_grid_with_avail(&grid);
+                            }
 
                             return None;
                         } else if len == 1 {
-                            println!(" only one option left");
+                            if options.verbose {
+                                println!(" only one option left");
+                            }
 
                             next.push((update_row, col));
                         } else {
-                            println!();
+                            if options.verbose {
+                                println!();
+                            }
                         }
                     }
                 }
@@ -475,27 +510,37 @@ fn process_state(state: StackState) -> Option<StackState> {
 
                 match &mut grid[update_index] {
                     Cell::Static(value) => if *value == checking {
-                        println!(" duplicate value found in col");
-                        print_grid_with_avail(&grid);
+                        if options.verbose {
+                            println!(" duplicate value found in col");
+                            print_grid_with_avail(&grid);
+                        }
 
                         return None;
                     }
                     Cell::Avail(avail) => if avail.remove(&checking) {
                         let len = avail.len();
 
-                        print!("updating {row}:{update_col}");
+                        if options.verbose {
+                            print!("updating {row}:{update_col}");
+                        }
 
                         if len == 0 {
-                            println!(" no more available options");
-                            print_grid_with_avail(&grid);
+                            if options.verbose {
+                                println!(" no more available options");
+                                print_grid_with_avail(&grid);
+                            }
 
                             return None;
                         } else if len == 1 {
-                            println!(" only one option left");
+                            if options.verbose {
+                                println!(" only one option left");
+                            }
 
                             next.push((row, update_col));
                         } else {
-                            println!();
+                            if options.verbose {
+                                println!();
+                            }
                         }
                     }
                 }
@@ -512,27 +557,37 @@ fn process_state(state: StackState) -> Option<StackState> {
 
                     match &mut grid[update_index] {
                         Cell::Static(value) => if *value == checking {
-                            println!(" duplicate value found in sub grid");
-                            print_grid_with_avail(&grid);
+                            if options.verbose {
+                                println!(" duplicate value found in sub grid");
+                                print_grid_with_avail(&grid);
+                            }
 
                             return None;
                         }
                         Cell::Avail(avail) => if avail.remove(&checking) {
                             let len = avail.len();
 
-                            print!("updating sub grid {sub_row}:{sub_col} {update_sub_row}:{update_sub_col}");
+                            if options.verbose {
+                                print!("updating sub grid {sub_row}:{sub_col} {update_sub_row}:{update_sub_col}");
+                            }
 
                             if len == 0 {
-                                println!(" no more available options");
-                                print_grid_with_avail(&grid);
+                                if options.verbose {
+                                    println!(" no more available options");
+                                    print_grid_with_avail(&grid);
+                                }
 
                                 return None;
                             } else if len == 1 {
-                                println!(" only one option left");
+                                if options.verbose {
+                                    println!(" only one option left");
+                                }
 
                                 next.push(grid_cord(sub_row, sub_col, update_sub_row, update_sub_col));
                             } else {
-                                println!();
+                                if options.verbose {
+                                    println!();
+                                }
                             }
                         }
                     }
@@ -541,7 +596,9 @@ fn process_state(state: StackState) -> Option<StackState> {
         }
 
         if next.is_empty() {
-            println!("checking subgrids");
+            if options.verbose {
+                println!("checking subgrids");
+            }
 
             let mut grids_checked = [false; SUB_GRID_SIZE * SUB_GRID_SIZE];
 
@@ -582,7 +639,10 @@ fn process_state(state: StackState) -> Option<StackState> {
 
                         grid[pos(update_row, update_col)] = Cell::Avail(new_set);
 
-                        println!("adding {update_row}:{update_col} {value}");
+                        if options.verbose {
+                            println!("adding {update_row}:{update_col} {value}");
+                        }
+
                         next.push((update_row, update_col));
                     }
                 }
